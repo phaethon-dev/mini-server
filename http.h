@@ -23,4 +23,3 @@ struct HttpResponse
 };
 
 std::optional<HttpRequest> parseHttpRequest(const std::string &raw);
-std::optional<HttpRequest> parseHttpResponse(const std::string &line);
