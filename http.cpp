@@ -76,7 +76,7 @@ namespace
         for (char c : path)
         {
             unsigned char code = static_cast<unsigned char>(c);
-            if (code < 33 || code > 126) // Control characters are not allowed
+            if (code < 33 || code > 126) // Only visible ASCII; anything else must be %-encoded
             {
                 return false;
             }
@@ -161,7 +161,7 @@ namespace
             return std::nullopt; // Invalid HTTP method
         }
         request.path = line.substr(first + 1, second - first - 1);
-        if(!isValidPath(request.path))
+        if (!isValidPath(request.path))
         {
             return std::nullopt; // Invalid path
         }
@@ -172,6 +172,23 @@ namespace
         }
         return request;
     }
+}
+
+std::string HttpResponse::toString() const
+{
+    std::string result = "HTTP/1.1 " + std::to_string(status) + " " + reason + "\r\n";
+    for (const auto &header : headers)
+    {
+        if (toLowerCase(header.first) == "content-length")
+        {
+            continue; // toString always writes its own, calculated Content-Length
+        }
+        result += header.first + ": " + header.second + "\r\n";
+    }
+    result += "Content-Length: " + std::to_string(body.size()) + "\r\n";
+    result += "\r\n"; // End of headers
+    result += body; // Append the body
+    return result;
 }
 
 std::optional<HttpRequest> parseHttpRequest(const std::string &raw)
