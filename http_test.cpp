@@ -74,6 +74,22 @@ void testRequestLine()
     assert(!parseHttpRequest(withRequestLine(" / HTTP/1.1")));             // empty method
     assert(!parseHttpRequest(withRequestLine("GET index.html HTTP/1.1"))); // path must start with /
 
+    // Method: uppercase letters only (every standard method is), and case-sensitive
+    assert(parseHttpRequest(withRequestLine("DELETE / HTTP/1.1")));
+    assert(!parseHttpRequest(withRequestLine("get / HTTP/1.1")));  // lowercase
+    assert(!parseHttpRequest(withRequestLine("Get / HTTP/1.1")));  // mixed case
+    assert(!parseHttpRequest(withRequestLine("G@T / HTTP/1.1")));  // symbol
+    assert(!parseHttpRequest(withRequestLine("GET1 / HTTP/1.1"))); // digit
+
+    // Path: visible ASCII characters only, codes 33 ('!') to 126 ('~').
+    // Control characters here would become part of a filename in Milestone 4.
+    assert(parseHttpRequest(withRequestLine("GET /a-b_c.d~e/f?x=1&y=%20 HTTP/1.1"))); // ordinary URL symbols
+    assert(!parseHttpRequest(withRequestLine("GET /a\tb HTTP/1.1")));                   // tab
+    assert(!parseHttpRequest(withRequestLine("GET /a\rb HTTP/1.1")));                   // carriage return
+    assert(!parseHttpRequest(withRequestLine(std::string("GET /a\0b HTTP/1.1", 17))));  // NUL (the length keeps the \0)
+    assert(!parseHttpRequest(withRequestLine("GET /a\x7F" "b HTTP/1.1")));              // DEL (code 127)
+    assert(!parseHttpRequest(withRequestLine("GET /caf\xC3\xA9 HTTP/1.1")));            // non-ASCII: must be %-encoded
+
     // Rejected: version must match HTTP/<digit>.<digit> exactly (RFC 9112)
     assert(!parseHttpRequest(withRequestLine("GET / FTP/1.0")));    // wrong protocol
     assert(!parseHttpRequest(withRequestLine("GET / http/1.1")));   // case-sensitive

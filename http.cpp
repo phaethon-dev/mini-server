@@ -58,6 +58,32 @@ namespace
         return lines;
     }
 
+    bool isValidMethod(const std::string &method)
+    {
+        // Define HTTP methods that are considered valid according to the HTTP standard
+        static const std::vector<std::string> validMethods = {
+            "GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS", "TRACE", "CONNECT", "PATCH"};
+        return std::find(validMethods.begin(), validMethods.end(), method) != validMethods.end();
+    }
+
+    bool isValidPath(const std::string &path)
+    {
+        // Path must start with '/' and contain only valid URL characters
+        if (path.empty() || path[0] != '/')
+        {
+            return false; // Path must start with '/'
+        }
+        for (char c : path)
+        {
+            unsigned char code = static_cast<unsigned char>(c);
+            if (code < 33 || code > 126) // Control characters are not allowed
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     bool isValidHeaderName(const std::string &name)
     {
         if (name.empty())
@@ -130,16 +156,16 @@ namespace
         }
         HttpRequest request;
         request.method = line.substr(0, first);
+        if (!isValidMethod(request.method))
+        {
+            return std::nullopt; // Invalid HTTP method
+        }
         request.path = line.substr(first + 1, second - first - 1);
+        if(!isValidPath(request.path))
+        {
+            return std::nullopt; // Invalid path
+        }
         request.version = line.substr(second + 1);
-        if (request.path.empty() || request.path[0] != '/')
-        {
-            return std::nullopt; // Path must start with '/'
-        }
-        if (request.method.empty())
-        {
-            return std::nullopt; // Method can't be empty
-        }
         if (!isValidHttpVersion(request.version))
         {
             return std::nullopt; // Version must be in the format "HTTP/x.y"
@@ -179,7 +205,7 @@ std::optional<HttpRequest> parseHttpRequest(const std::string &raw)
         {
             return std::nullopt; // Invalid header line
         }
-        if(request->headers.count(header->first))
+        if (request->headers.count(header->first))
         {
             return std::nullopt; // Duplicate header name found
         }
