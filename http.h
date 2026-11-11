@@ -34,3 +34,6 @@ HttpResponse methodNotAllowed(); // 405
 HttpResponse makeResponse(int status, const std::string &reason,
                           const std::string &contentType, const std::string &body);
 HttpResponse makeErrorResponse(int status, const std::string &reason);
+
+// Returns the MIME type for a given file path, based on its extension.
+std::string mimeTypeFor(const std::string &path);

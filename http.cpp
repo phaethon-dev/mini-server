@@ -209,10 +209,52 @@ HttpResponse makeResponse(int status, const std::string &reason,
     return response;
 }
 
-HttpResponse makeErrorResponse(int status, const std::string &reason){  
+HttpResponse makeErrorResponse(int status, const std::string &reason)
+{
     // Generates a simple HTML page for the error response
     std::string page = "<html><body><h1>" + std::to_string(status) + " " + reason + "</h1></body></html>";
     return makeResponse(status, reason, "text/html", page);
+}
+
+std::string mimeTypeFor(const std::string &path)
+{
+    // Find the last dot in the path to determine the file extension
+    std::size_t dotPos = path.find_last_of('.');
+    if (dotPos == std::string::npos || dotPos == path.size() - 1)
+    {
+        return "application/octet-stream"; // No extension found, default to binary stream
+    }
+    if (path.find('/', dotPos) != std::string::npos)
+    {
+        return "application/octet-stream"; // Dot is part of a directory name, not an extension
+    }
+    if (dotPos == 0 || path[dotPos - 1] == '/')
+    {
+        return "application/octet-stream"; // Dot is part of a hidden file in a directory, not an extension
+    }
+    std::string extension = path.substr(dotPos + 1);
+    extension = toLowerCase(extension); // Convert extension to lowercase for case-insensitive comparison
+    // Map of common file extensions to their corresponding MIME types
+    static const std::map<std::string, std::string> mimeTypes = {
+        {"html", "text/html"},
+        {"htm", "text/html"},
+        {"css", "text/css"},
+        {"js", "text/javascript"},
+        {"json", "application/json"},
+        {"png", "image/png"},
+        {"jpg", "image/jpeg"},
+        {"jpeg", "image/jpeg"},
+        {"gif", "image/gif"},
+        {"txt", "text/plain"},
+        {"pdf", "application/pdf"},
+        // Add more mappings as needed
+    };
+    auto mime = mimeTypes.find(extension);
+    if (mime != mimeTypes.end())
+    {
+        return mime->second; // Return the corresponding MIME type if found
+    }
+    return "application/octet-stream"; // Default MIME type for unknown extensions
 }
 
 std::string HttpResponse::toString() const
