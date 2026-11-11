@@ -174,6 +174,47 @@ namespace
     }
 }
 
+HttpResponse okResponse(const std::string &body, const std::string &contentType)
+{
+    return makeResponse(200, "OK", contentType, body);
+}
+
+HttpResponse badRequest()
+{
+    return makeErrorResponse(400, "Bad Request");
+}
+
+HttpResponse notFound()
+{
+    return makeErrorResponse(404, "Not Found");
+}
+
+HttpResponse methodNotAllowed()
+{
+    HttpResponse response = makeErrorResponse(405, "Method Not Allowed");
+    response.headers["Allow"] = "GET";
+    return response;
+}
+
+HttpResponse makeResponse(int status, const std::string &reason,
+                          const std::string &contentType, const std::string &body)
+{
+    HttpResponse response;
+    response.status = status;
+    response.reason = reason;
+    response.headers["Content-Type"] = contentType;
+    // The "Connection: close" header is added to indicate that the server will close the connection after sending the response
+    response.headers["Connection"] = "close";
+    response.body = body;
+    return response;
+}
+
+HttpResponse makeErrorResponse(int status, const std::string &reason){  
+    // Generates a simple HTML page for the error response
+    std::string page = "<html><body><h1>" + std::to_string(status) + " " + reason + "</h1></body></html>";
+    return makeResponse(status, reason, "text/html", page);
+}
+
 std::string HttpResponse::toString() const
 {
     std::string result = "HTTP/1.1 " + std::to_string(status) + " " + reason + "\r\n";
@@ -187,7 +228,7 @@ std::string HttpResponse::toString() const
     }
     result += "Content-Length: " + std::to_string(body.size()) + "\r\n";
     result += "\r\n"; // End of headers
-    result += body; // Append the body
+    result += body;   // Append the body
     return result;
 }
 
