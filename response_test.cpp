@@ -95,11 +95,28 @@ void testHeaders()
     assert(countOf(text, "\r\n\r\n") == 1);
 }
 
+void testOkResponse()
+{
+    // A success response with the content type and body it was given
+    HttpResponse ok = okResponse("<p>hi</p>", "text/html");
+    assert(ok.status == 200);
+    assert(ok.reason == "OK");
+    assert(ok.headers.at("Content-Type") == "text/html");
+    assert(ok.headers.at("Connection") == "close");
+    assert(ok.body == "<p>hi</p>");
+
+    // Binary bodies are kept exactly, including a NUL byte
+    HttpResponse image = okResponse(std::string("a\0b", 3), "image/png");
+    assert(image.body == std::string("a\0b", 3));
+    assert(image.headers.at("Content-Type") == "image/png");
+}
+
 int main()
 {
     testExactOutput();
     testContentLength();
     testHeaders();
+    testOkResponse();
 
     std::cout << "All tests passed!\n";
     return 0;
