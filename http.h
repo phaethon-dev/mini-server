@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <map>
 #include <optional>
 #include <string>
@@ -29,7 +30,9 @@ HttpResponse okResponse(const std::string &body, const std::string &contentType)
 HttpResponse badRequest();       // 400
 HttpResponse notFound();         // 404
 HttpResponse methodNotAllowed(); // 405
-HttpResponse handleRequest(const std::string &raw);
+std::optional<std::filesystem::path> resolvePath(const std::filesystem::path &root, const std::string &urlPath);
+std::optional<std::string> readFile(const std::filesystem::path &root); // returns the file's content if it exists, otherwise std::nullopt
+HttpResponse handleRequest(const std::string &raw, const std::string &documentRoot);
 
 // General builders
 HttpResponse makeResponse(int status, const std::string &reason,

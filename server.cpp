@@ -34,7 +34,7 @@ int main(){
             clientSocket.close();
             continue;
         }
-        HttpResponse response = handleRequest(*requestOpt);
+        HttpResponse response = handleRequest(*requestOpt, "public");
         if(!clientSocket.sendAll(response.toString())){
             std::cerr << "Failed to send response: " << WSAGetLastError() << std::endl;
         }

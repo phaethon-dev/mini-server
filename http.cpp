@@ -4,6 +4,11 @@
 #include <utility>
 #include <vector>
 #include <cstddef>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+
+namespace fs = std::filesystem;
 
 namespace
 {
@@ -196,7 +201,65 @@ HttpResponse methodNotAllowed()
     return response;
 }
 
-HttpResponse handleRequest(const std::string &raw){
+std::optional<std::filesystem::path> resolvePath(const std::filesystem::path &root, const std::string &urlPath)
+{
+    if (urlPath.find("..") != std::string::npos || urlPath.find('\\') != std::string::npos ||
+        urlPath.find(':') != std::string::npos || urlPath.find("//") != std::string::npos)
+    {
+        return std::nullopt; // Layer 1: reject "..", backslashes, drive letters, and "//" outright.
+    }
+    std::filesystem::path requestedPath = root / urlPath.substr(1); // Remove leading '/' from urlPath
+    std::error_code ec;
+    std::filesystem::path canonicalPath = std::filesystem::weakly_canonical(requestedPath, ec);
+    if (ec)
+    {
+        return std::nullopt; // Error occurred while resolving the path
+    }
+    std::filesystem::path canonicalRoot = std::filesystem::weakly_canonical(root, ec);
+    if (ec)
+    {
+        return std::nullopt; // Error occurred while resolving the path
+    }
+    std::filesystem::path relative = canonicalPath.lexically_relative(canonicalRoot);
+    if (relative.empty() || *relative.begin() == "..")
+    {
+        return std::nullopt; // The resolved path is outside the root directory
+    }
+    if (std::filesystem::is_directory(canonicalPath))
+    {
+        canonicalPath /= "index.html"; // a folder means its index page
+    }
+    if (!std::filesystem::exists(canonicalPath))
+    {
+        return std::nullopt; // The resolved path does not exist
+    }
+    if (!std::filesystem::is_regular_file(canonicalPath))
+    {
+        return std::nullopt; // The resolved path is not a regular file
+    }
+    return canonicalPath;
+}
+
+std::optional<std::string> readFile(const std::filesystem::path &root)
+{
+    std::ifstream file(root, std::ios::binary);
+    if (!file)
+    {
+        return std::nullopt;
+    }
+
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    if (file.bad())
+    {
+        return std::nullopt;
+    }
+
+    return buffer.str();
+}
+
+HttpResponse handleRequest(const std::string &raw, const std::string &documentRoot)
+{
     auto request = parseHttpRequest(raw);
     if (!request)
     {
@@ -206,7 +269,19 @@ HttpResponse handleRequest(const std::string &raw){
     {
         return methodNotAllowed(); // Only GET method is allowed
     }
-    return okResponse("<html><body><h1>Hello from my server!</h1></body></html>", "text/html");
+    // Everything from '?' onward is a query string, not part of the file name
+    std::string path = request->path.substr(0, request->path.find('?'));
+    auto resolvedPath = resolvePath(documentRoot, path);
+    if (!resolvedPath)
+    {
+        return notFound(); // File not found or path traversal attempt
+    }
+    auto fileContent = readFile(*resolvedPath);
+    if (!fileContent)
+    {
+        return notFound(); // File could not be read
+    }
+    return okResponse(*fileContent, mimeTypeFor(resolvedPath->string())); // Return the file content with appropriate MIME type
 }
 
 HttpResponse makeResponse(int status, const std::string &reason,
