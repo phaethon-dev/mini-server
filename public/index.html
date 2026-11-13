@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mini Server</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <main>
+        <h1>Mini Server</h1>
+        <p class="lead">This page was served by a small HTTP server written in C++, from raw Windows sockets up.</p>
+
+        <img src="/images/photo.jpg" alt="A photo served by the mini server">
+
+        <h2>What this page is testing</h2>
+        <ul>
+            <li><strong>HTML</strong>: this page, sent as <code>text/html</code></li>
+            <li><strong>CSS</strong>: the styling, from <code>/style.css</code> as <code>text/css</code></li>
+            <li><strong>Images</strong>: the photo above, sent byte for byte as <code>image/jpeg</code></li>
+            <li><strong>JavaScript</strong>: <span id="js-status">not loaded</span></li>
+            <li><strong>Folders</strong>: <a href="/about/">the About page</a> is <code>about/index.html</code></li>
+            <li><strong>Missing files</strong>: <a href="/does-not-exist.html">this link</a> should give a 404</li>
+        </ul>
+    </main>
+    <script src="/script.js"></script>
+</body>
+</html>
