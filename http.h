@@ -29,6 +29,7 @@ HttpResponse okResponse(const std::string &body, const std::string &contentType)
 HttpResponse badRequest();       // 400
 HttpResponse notFound();         // 404
 HttpResponse methodNotAllowed(); // 405
+HttpResponse handleRequest(const std::string &raw);
 
 // General builders
 HttpResponse makeResponse(int status, const std::string &reason,

@@ -196,6 +196,19 @@ HttpResponse methodNotAllowed()
     return response;
 }
 
+HttpResponse handleRequest(const std::string &raw){
+    auto request = parseHttpRequest(raw);
+    if (!request)
+    {
+        return badRequest(); // Invalid request format
+    }
+    if (request->method != "GET")
+    {
+        return methodNotAllowed(); // Only GET method is allowed
+    }
+    return okResponse("<html><body><h1>Hello from my server!</h1></body></html>", "text/html");
+}
+
 HttpResponse makeResponse(int status, const std::string &reason,
                           const std::string &contentType, const std::string &body)
 {

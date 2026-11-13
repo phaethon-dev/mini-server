@@ -4,13 +4,13 @@ CXXFLAGS = -std=c++17 -Wall -Wshadow -g -MMD -MP
 LDLIBS   = -lws2_32
 
 # Shared code: every reusable .cpp goes in this list, and only this list
-LIB_OBJS = http.o
+LIB_OBJS = http.o socket.o
 LIB      = libserver.a
 
 # Programs: every *_test.cpp is found automatically and compiled into its own .exe; the linker will pull in only the pieces of the library that are needed
 PROGRAMS = $(patsubst %.cpp,%.exe,$(wildcard *_test.cpp))
 
-APPS = 
+APPS = server.exe
 
 all: $(PROGRAMS) $(APPS)
 
