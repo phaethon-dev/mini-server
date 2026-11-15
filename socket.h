@@ -4,6 +4,7 @@
 #include <string>
 #include <optional>
 #include <cstddef>
+#include <chrono>
 
 class WinsockSession
 {
@@ -46,6 +47,8 @@ public:
     bool bind(int port);
     bool listen(int backlog = 5);
     Socket accept();
+    bool setReceiveTimeout(DWORD ms);
+    bool setSendTimeout(DWORD ms);
     bool sendAll(const std::string &data);
     std::optional<std::string> readRequest(std::size_t maxBytes = maximumBytes); // Default max size is set to maximumBytes
     void close();
@@ -53,4 +56,5 @@ public:
 private:
     SOCKET handle_ = INVALID_SOCKET;                  // INVALID_SOCKET means "no socket"
     static constexpr std::size_t maximumBytes = 8192; // Maximum bytes to read from a request, to prevent reading excessively large requests
+    static constexpr std::chrono::seconds requestTimeLimit{10}; // Default receive timeout in seconds for the whole request, to prevent hanging indefinitely
 };

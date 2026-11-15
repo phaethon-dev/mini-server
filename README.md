@@ -12,6 +12,7 @@ A small HTTP/1.1 static file server written in C++17 from raw Windows sockets up
 - **Path traversal protection** in two independent layers (see below).
 - **Clear error responses**: `400 Bad Request`, `404 Not Found`, and `405 Method Not Allowed` (with the required `Allow` header), each with a small HTML page.
 - **Robust networking**: requests that arrive in several pieces are reassembled, responses are sent completely even when the socket accepts only part at a time, and request headers are limited to 8 KB.
+- **Timeouts**: a client that goes silent for 5 seconds, or takes longer than 10 seconds to send its whole request, is disconnected. The second limit defends against slow-sending attacks such as Slowloris, which send just enough data to keep resetting a simple read timeout.
 
 ## Building and running
 
@@ -65,8 +66,7 @@ Five test programs with 160 assertions cover request parsing, response formattin
 
 This is a learning project, not a production server.
 
-- It handles one connection at a time, and one request per connection (`Connection: close`).
-- There is no read timeout, so a client that connects and sends nothing holds up the server until it disconnects.
+- It handles one connection at a time, and one request per connection (`Connection: close`). The timeouts limit how long one client can hold the server, but other visitors still wait while a slow client is connected.
 - Only `GET` is supported.
 - Percent-encoded paths (such as `%20`) are not decoded.
 - It runs on Windows only, because it uses Winsock directly.

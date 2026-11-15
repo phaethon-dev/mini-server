@@ -52,6 +52,16 @@ Socket Socket::accept()
     return Socket(client);
 }
 
+bool Socket::setReceiveTimeout(DWORD ms)
+{
+    return ::setsockopt(handle_, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&ms), sizeof(ms)) != SOCKET_ERROR;
+}
+
+bool Socket::setSendTimeout(DWORD ms)
+{
+    return ::setsockopt(handle_, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char *>(&ms), sizeof(ms)) != SOCKET_ERROR;
+}
+
 bool Socket::sendAll(const std::string &data)
 {
     std::size_t sent = 0;
@@ -72,23 +82,27 @@ std::optional<std::string> Socket::readRequest(std::size_t maxBytes)
 {
     std::string request;
     char buffer[1024];
-
+    auto start = std::chrono::steady_clock::now();
     while (true)
     {
         int received = ::recv(handle_, buffer, sizeof(buffer), 0);
         if (received == SOCKET_ERROR || received == 0)
         {
-            return std::nullopt;   // an error, or the client disconnected
+            return std::nullopt; // an error, or the client disconnected
         }
         request.append(buffer, static_cast<std::size_t>(received));
 
         if (request.find("\r\n\r\n") != std::string::npos)
         {
-            return request;        // the blank line arrived: the headers are complete
+            return request; // the blank line arrived: the headers are complete
         }
         if (request.size() >= maxBytes)
         {
-            return std::nullopt;   // too big, and still no end of headers
+            return std::nullopt; // too big, and still no end of headers
+        }
+        if (std::chrono::steady_clock::now() - start > requestTimeLimit)
+        {
+            return std::nullopt; // timeout after requestTimeLimit duration
         }
     }
 }
