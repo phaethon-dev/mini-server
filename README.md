@@ -10,9 +10,11 @@ A small HTTP/1.1 static file server written in C++17 from raw Windows sockets up
 - **Folder support**: requesting a folder serves its `index.html`.
 - **Content types** chosen from the file extension, case-insensitively: HTML, CSS, JavaScript, JSON, PNG, JPEG, GIF, plain text, and PDF, with `application/octet-stream` as the fallback.
 - **Path traversal protection** in two independent layers (see below).
-- **Clear error responses**: `400 Bad Request`, `404 Not Found`, and `405 Method Not Allowed` (with the required `Allow` header), each with a small HTML page.
+- **Clear error responses**: `400 Bad Request`, `404 Not Found`, `405 Method Not Allowed` (with the required `Allow` header), and `500 Internal Server Error`, each with a small HTML page.
 - **Robust networking**: requests that arrive in several pieces are reassembled, responses are sent completely even when the socket accepts only part at a time, and request headers are limited to 8 KB.
 - **Timeouts**: a client that goes silent for 5 seconds, or takes longer than 10 seconds to send its whole request, is disconnected. The second limit defends against slow-sending attacks such as Slowloris, which send just enough data to keep resetting a simple read timeout.
+- **Concurrent clients**: each connection is handled on its own thread, up to 100 at once. Further connections are turned away until a slot frees up, so a flood of connections cannot exhaust the server's memory.
+- **Fault isolation**: an unexpected error while handling one client is caught on that client's thread, logged, and answered with `500 Internal Server Error`, while every other connection keeps working.
 
 ## Building and running
 
@@ -43,7 +45,9 @@ Blocked paths return `404`, the same response as a file that does not exist, so 
 
 **Testable core, thin networking layer.** All decisions live in `handleRequest`, which takes the raw request text and returns a response without touching any sockets. The networking code in `server.cpp` only accepts connections, reads, calls the handler, and sends.
 
-**Return values instead of exceptions.** Expected outcomes such as a missing file or a malformed request are returned as values (`std::optional`, `HttpResponse`) rather than thrown, so every path through the code is visible.
+**Return values instead of exceptions.** Expected outcomes such as a missing file or a malformed request are returned as values (`std::optional`, `HttpResponse`) rather than thrown, so every path through the code is visible. Exceptions are reserved for the truly unexpected, such as running out of memory, and each client thread catches them so that one failure cannot terminate the whole server.
+
+**One thread per client, with a counted limit.** The main thread only accepts connections; each client is moved into its own detached thread, which owns the socket and closes it on exit. An atomic counter tracks active clients. The main thread increments it before starting a thread, so a sudden burst of connections cannot slip past the limit, and a small RAII guard in the client thread decrements it on every exit path, including errors.
 
 ## Tests
 
@@ -57,7 +61,7 @@ Five test programs with 160 assertions cover request parsing, response formattin
 |---|---|
 | `http.h` / `http.cpp` | Request parsing, response building, content types, path resolution, and `handleRequest` |
 | `socket.h` / `socket.cpp` | `WinsockSession` and the move-only `Socket` class |
-| `server.cpp` | `main`: the accept, read, handle, send loop |
+| `server.cpp` | `main`, which accepts connections, and `handleClient`, which reads, handles, and sends on each client's thread |
 | `*_test.cpp` | Test programs, found and run automatically by the Makefile |
 | `public/` | The demo site the server serves |
 | `test_public/`, `test_secret.txt` | Fixtures for the file-serving and traversal tests |
@@ -66,7 +70,8 @@ Five test programs with 160 assertions cover request parsing, response formattin
 
 This is a learning project, not a production server.
 
-- It handles one connection at a time, and one request per connection (`Connection: close`). The timeouts limit how long one client can hold the server, but other visitors still wait while a slow client is connected.
+- It handles one request per connection (`Connection: close`).
+- It uses one thread per client rather than a thread pool or asynchronous I/O, which is simple but would not scale to many thousands of connections.
 - Only `GET` is supported.
 - Percent-encoded paths (such as `%20`) are not decoded.
 - It runs on Windows only, because it uses Winsock directly.
