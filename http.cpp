@@ -32,6 +32,23 @@ namespace
         return leftTrim(rightTrim(text));
     }
 
+    int hexCharToInt(char c)
+    {
+        if (c >= '0' && c <= '9')
+        {
+            return c - '0';
+        }
+        if (c >= 'a' && c <= 'f')
+        {
+            return c - 'a' + 10;
+        }
+        if (c >= 'A' && c <= 'F')
+        {
+            return c - 'A' + 10;
+        }
+        return -1;
+    }
+
     // Helper function to convert a string to lowercase
     std::string toLowerCase(const std::string &text)
     {
@@ -201,6 +218,40 @@ HttpResponse methodNotAllowed()
     return response;
 }
 
+std::optional<std::string> percentDecode(const std::string &input)
+{
+    std::string decoded;
+    decoded.reserve(input.size());
+    for (std::size_t i = 0; i < input.size(); ++i)
+    {
+        if (input[i] == '%' && i + 2 < input.size())
+        {
+            const int high = hexCharToInt(input[i + 1]);
+            const int low = hexCharToInt(input[i + 2]);
+            if (high == -1 || low == -1)
+            {
+                return std::nullopt;
+            }
+            const int value = (high << 4) | low;
+            if (value == 0 || value == '/')
+            {
+                return std::nullopt; // an encoded NUL could cut the path short, and an encoded slash hides a separator
+            }
+            decoded.push_back(static_cast<char>(value));
+            i += 2;
+        }
+        else if (input[i] == '%')
+        {
+            return std::nullopt;
+        }
+        else
+        {
+            decoded.push_back(input[i]);
+        }
+    }
+    return decoded;
+}
+
 std::optional<std::filesystem::path> resolvePath(const std::filesystem::path &root, const std::string &urlPath)
 {
     if (urlPath.find("..") != std::string::npos || urlPath.find('\\') != std::string::npos ||
@@ -271,7 +322,12 @@ HttpResponse handleRequest(const std::string &raw, const std::string &documentRo
     }
     // Everything from '?' onward is a query string, not part of the file name
     std::string path = request->path.substr(0, request->path.find('?'));
-    auto resolvedPath = resolvePath(documentRoot, path);
+    auto decodedPath = percentDecode(path);
+    if (!decodedPath)
+    {
+        return badRequest(); // Invalid percent encoding
+    }
+    auto resolvedPath = resolvePath(documentRoot, *decodedPath);
     if (!resolvedPath)
     {
         return notFound(); // File not found or path traversal attempt

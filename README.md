@@ -9,6 +9,7 @@ A small HTTP/1.1 static file server written in C++17 from raw Windows sockets up
 - **Static file serving** from a `public` folder, sent byte for byte so images and other binary files arrive intact.
 - **Folder support**: requesting a folder serves its `index.html`.
 - **Content types** chosen from the file extension, case-insensitively: HTML, CSS, JavaScript, JSON, PNG, JPEG, GIF, plain text, and PDF, with `application/octet-stream` as the fallback.
+- **Percent-decoding** of request paths, so `/my%20photo.jpg` serves `my photo.jpg`. Malformed escapes such as `%zz`, an encoded NUL byte (`%00`), and an encoded slash (`%2F`) are rejected with `400 Bad Request`.
 - **Path traversal protection** in two independent layers (see below).
 - **Clear error responses**: `400 Bad Request`, `404 Not Found`, `405 Method Not Allowed` (with the required `Allow` header), and `500 Internal Server Error`, each with a small HTML page.
 - **Robust networking**: requests that arrive in several pieces are reassembled, responses are sent completely even when the socket accepts only part at a time, and request headers are limited to 8 KB.
@@ -39,6 +40,8 @@ The server listens on `127.0.0.1` only, so it can be reached from this computer 
 
 Blocked paths return `404`, the same response as a file that does not exist, so the server reveals nothing about what is on disk.
 
+**Decode once, then check.** The path is percent-decoded exactly once, after the query string is removed and before either traversal layer runs. Checking before decoding would let `%2e%2e` slip past the `..` filter, and decoding twice would turn `%252e` into `.`, a classic bypass. Encoded slashes are rejected because they would let filters and the file system disagree about where path segments begin, and encoded NUL bytes because some file APIs treat NUL as the end of a string.
+
 **Strict parsing.** Lenient parsers that accept things like whitespace before a header colon or stray carriage returns can disagree with proxies about where a request ends, which is the basis of HTTP request smuggling. This server rejects anything ambiguous. Rejecting all duplicate headers is deliberately stricter than the specification.
 
 **RAII for operating system resources.** `WinsockSession` starts and cleans up Winsock, and `Socket` owns a single socket handle and closes it in its destructor. `Socket` cannot be copied, only moved, so every handle is closed exactly once, even when a function returns early.
@@ -51,7 +54,7 @@ Blocked paths return `404`, the same response as a file that does not exist, so 
 
 ## Tests
 
-Five test programs with 160 assertions cover request parsing, response formatting, error pages, content types, and file serving, including eight path traversal attacks. Run them with `mingw32-make run`.
+Six test programs with 215 assertions cover request parsing, response formatting, error pages, content types, percent-decoding, and file serving, including fifteen path traversal attacks, seven of them percent-encoded. Run them with `mingw32-make run`.
 
 `test_public/` contains small files the tests serve. `test_secret.txt` sits outside that folder on purpose: it is a fake "secret" that the traversal tests try to reach, to prove they cannot. It contains no real data.
 
@@ -73,7 +76,6 @@ This is a learning project, not a production server.
 - It handles one request per connection (`Connection: close`).
 - It uses one thread per client rather than a thread pool or asynchronous I/O, which is simple but would not scale to many thousands of connections.
 - Only `GET` is supported.
-- Percent-encoded paths (such as `%20`) are not decoded.
 - It runs on Windows only, because it uses Winsock directly.
 
 ## About this project
