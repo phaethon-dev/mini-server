@@ -15,6 +15,7 @@ A small HTTP/1.1 static file server written in C++17 from raw Windows sockets up
 - **Robust networking**: requests that arrive in several pieces are reassembled, responses are sent completely even when the socket accepts only part at a time, and request headers are limited to 8 KB.
 - **Timeouts**: a client that goes silent for 5 seconds, or takes longer than 10 seconds to send its whole request, is disconnected. The second limit defends against slow-sending attacks such as Slowloris, which send just enough data to keep resetting a simple read timeout.
 - **Concurrent clients**: each connection is handled on its own thread, up to 100 at once. Further connections are turned away until a slot frees up, so a flood of connections cannot exhaust the server's memory.
+- **Keep-alive**: an HTTP/1.1 connection carries up to 100 requests, including several sent back to back in one packet (pipelining), so a browser can load a page and its CSS, JavaScript, and images without reconnecting. The connection closes when the client asks, for HTTP/1.0, after an error, or when a request has a body.
 - **Fault isolation**: an unexpected error while handling one client is caught on that client's thread, logged, and answered with `500 Internal Server Error`, while every other connection keeps working.
 
 ## Building and running
@@ -52,9 +53,11 @@ Blocked paths return `404`, the same response as a file that does not exist, so 
 
 **One thread per client, with a counted limit.** The main thread only accepts connections; each client is moved into its own detached thread, which owns the socket and closes it on exit. An atomic counter tracks active clients. The main thread increments it before starting a thread, so a sudden burst of connections cannot slip past the limit, and a small RAII guard in the client thread decrements it on every exit path, including errors.
 
+**Keep-alive only when it is safe.** One function decides whether a connection stays open, after the response is built, so every response states the decision in its `Connection` header and the server acts on that header alone. The connection is closed whenever the server cannot be sure where the next request begins: after a `400`, or when a request carries `Content-Length` or `Transfer-Encoding`. This server never reads request bodies, so an unread body would otherwise be parsed as the next request, which is how request smuggling attacks hide a second request inside the first. Bytes that arrive after the end of one request are kept in the `Socket` and used for the next.
+
 ## Tests
 
-Six test programs with 215 assertions cover request parsing, response formatting, error pages, content types, percent-decoding, and file serving, including fifteen path traversal attacks, seven of them percent-encoded. Run them with `mingw32-make run`.
+Seven test programs with 243 assertions cover request parsing, response formatting, error pages, content types, percent-decoding, keep-alive decisions, and file serving, including fifteen path traversal attacks, seven of them percent-encoded. Run them with `mingw32-make run`.
 
 `test_public/` contains small files the tests serve. `test_secret.txt` sits outside that folder on purpose: it is a fake "secret" that the traversal tests try to reach, to prove they cannot. It contains no real data.
 
@@ -63,8 +66,8 @@ Six test programs with 215 assertions cover request parsing, response formatting
 | File | Purpose |
 |---|---|
 | `http.h` / `http.cpp` | Request parsing, response building, content types, path resolution, and `handleRequest` |
-| `socket.h` / `socket.cpp` | `WinsockSession` and the move-only `Socket` class |
-| `server.cpp` | `main`, which accepts connections, and `handleClient`, which reads, handles, and sends on each client's thread |
+| `socket.h` / `socket.cpp` | `WinsockSession` and the move-only `Socket` class, which buffers bytes left over from one request for the next |
+| `server.cpp` | `main`, which accepts connections, and `handleClient`, which reads, handles, and sends each request on the client's own thread |
 | `*_test.cpp` | Test programs, found and run automatically by the Makefile |
 | `public/` | The demo site the server serves |
 | `test_public/`, `test_secret.txt` | Fixtures for the file-serving and traversal tests |
@@ -73,7 +76,7 @@ Six test programs with 215 assertions cover request parsing, response formatting
 
 This is a learning project, not a production server.
 
-- It handles one request per connection (`Connection: close`).
+- An idle keep-alive connection holds one of the 100 client slots until it times out after 5 seconds. Browsers open up to six connections per site, so about 16 visitors can be connected at the same moment.
 - It uses one thread per client rather than a thread pool or asynchronous I/O, which is simple but would not scale to many thousands of connections.
 - Only `GET` is supported.
 - It runs on Windows only, because it uses Winsock directly.

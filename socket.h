@@ -57,4 +57,5 @@ private:
     SOCKET handle_ = INVALID_SOCKET;                  // INVALID_SOCKET means "no socket"
     static constexpr std::size_t maximumBytes = 8192; // Maximum bytes to read from a request, to prevent reading excessively large requests
     static constexpr std::chrono::seconds requestTimeLimit{10}; // Default receive timeout in seconds for the whole request, to prevent hanging indefinitely
+    std::string pending_;
 };

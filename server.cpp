@@ -6,11 +6,12 @@
 #include "socket.h"
 
 static constexpr int PORT = 8080;
-static constexpr int TIMEOUT = 5000;                   // Timeout in milliseconds
-static constexpr int MAX_PENDING_CONNECTIONS = 5;      // Number of pending connections that can be queued
-static constexpr int MAX_CLIENTS = 100;                // Maximum number of concurrent clients
-static std::atomic<int> activeClients{0};              // Atomic counter to track the number of active clients
-static constexpr const char *DOCUMENT_ROOT = "public"; // Root directory for serving static files
+static constexpr int TIMEOUT = 5000;                    // Timeout in milliseconds
+static constexpr int MAX_PENDING_CONNECTIONS = 5;       // Number of pending connections that can be queued
+static constexpr int MAX_CLIENTS = 100;                 // Maximum number of concurrent clients
+static constexpr int MAX_REQUESTS_PER_CONNECTION = 100; // Maximum number of requests handleRequest can loop
+static std::atomic<int> activeClients{0};               // Atomic counter to track the number of active clients
+static constexpr const char *DOCUMENT_ROOT = "public";  // Root directory for serving static files
 
 struct ClientCounter
 {
@@ -46,15 +47,27 @@ void handleClient(Socket client)
             std::cerr << "Failed to set send timeout: " << WSAGetLastError() << std::endl;
             return;
         }
-        auto requestOpt = client.readRequest();
-        if (!requestOpt)
+        for (int loop = 0; loop < MAX_REQUESTS_PER_CONNECTION; loop++)
         {
-            return; // Failed to read request or request was too large
-        }
-        HttpResponse response = handleRequest(*requestOpt, DOCUMENT_ROOT);
-        if (!client.sendAll(response.toString()))
-        {
-            std::cerr << "Failed to send response: " << WSAGetLastError() << std::endl;
+            auto requestOpt = client.readRequest();
+            if (!requestOpt)
+            {
+                return; // Failed to read request or request was too large
+            }
+            HttpResponse response = handleRequest(*requestOpt, DOCUMENT_ROOT);
+            if(loop == MAX_REQUESTS_PER_CONNECTION - 1)
+            {
+                response.headers["Connection"] = "close";
+            }
+            if (!client.sendAll(response.toString()))
+            {
+                std::cerr << "Failed to send response: " << WSAGetLastError() << std::endl;
+                return;
+            }
+            if (!responseKeepsAlive(response))
+            {
+                return;
+            }
         }
     }
     catch (const std::exception &e)

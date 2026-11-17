@@ -33,6 +33,7 @@ HttpResponse methodNotAllowed(); // 405
 std::optional<std::string> percentDecode(const std::string &input);
 std::optional<std::filesystem::path> resolvePath(const std::filesystem::path &root, const std::string &urlPath);
 std::optional<std::string> readFile(const std::filesystem::path &root); // returns the file's content if it exists, otherwise std::nullopt
+bool responseKeepsAlive(const HttpResponse &response);
 HttpResponse handleRequest(const std::string &raw, const std::string &documentRoot);
 
 // General builders

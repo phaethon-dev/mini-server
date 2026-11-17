@@ -1,7 +1,7 @@
 #include "socket.h"
 
 // Move constructor, transfers ownership of the socket handle from another Socket
-Socket::Socket(Socket &&other) noexcept : handle_(other.handle_)
+Socket::Socket(Socket &&other) noexcept : handle_(other.handle_), pending_(std::move(other.pending_))
 {
     other.handle_ = INVALID_SOCKET; // the old object no longer owns it
 }
@@ -27,6 +27,7 @@ Socket &Socket::operator=(Socket &&other) noexcept
         close();
         handle_ = other.handle_;
         other.handle_ = INVALID_SOCKET;
+        pending_ = std::move(other.pending_);
     }
     return *this;
 }
@@ -80,22 +81,25 @@ bool Socket::sendAll(const std::string &data)
 
 std::optional<std::string> Socket::readRequest(std::size_t maxBytes)
 {
-    std::string request;
+    std::string request = std::move(pending_);
+    pending_.clear();
     char buffer[1024];
     auto start = std::chrono::steady_clock::now();
     while (true)
     {
+        const std::size_t end = request.find("\r\n\r\n");
+        if (end != std::string::npos)
+        {
+            pending_ = request.substr(end + 4);
+            request = request.substr(0, end + 4);
+            return request; // the blank line arrived: the headers are complete
+        }
         int received = ::recv(handle_, buffer, sizeof(buffer), 0);
         if (received == SOCKET_ERROR || received == 0)
         {
             return std::nullopt; // an error, or the client disconnected
         }
         request.append(buffer, static_cast<std::size_t>(received));
-
-        if (request.find("\r\n\r\n") != std::string::npos)
-        {
-            return request; // the blank line arrived: the headers are complete
-        }
         if (request.size() >= maxBytes)
         {
             return std::nullopt; // too big, and still no end of headers

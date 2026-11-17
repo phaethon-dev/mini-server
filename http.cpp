@@ -194,6 +194,57 @@ namespace
         }
         return request;
     }
+
+    HttpResponse buildResponse(const HttpRequest &request, const std::string &documentRoot)
+    {
+        if (request.method != "GET")
+        {
+            return methodNotAllowed(); // Only GET method is allowed
+        }
+        // Everything from '?' onward is a query string, not part of the file name
+        std::string path = request.path.substr(0, request.path.find('?'));
+        auto decodedPath = percentDecode(path);
+        if (!decodedPath)
+        {
+            return badRequest(); // Invalid percent encoding
+        }
+        auto resolvedPath = resolvePath(documentRoot, *decodedPath);
+        if (!resolvedPath)
+        {
+            return notFound(); // File not found or path traversal attempt
+        }
+        auto fileContent = readFile(*resolvedPath);
+        if (!fileContent)
+        {
+            return notFound(); // File could not be read
+        }
+        HttpResponse response = okResponse(*fileContent, mimeTypeFor(resolvedPath->string()));
+        return response;
+    }
+
+    bool clientAllowsKeepAlive(const HttpRequest &request)
+    {
+        if (request.version != "HTTP/1.1")
+        {
+            return false;
+        }
+        for (const auto &header : request.headers)
+        {
+            if (toLowerCase(header.first) == "content-length")
+            {
+                return false;
+            }
+            if (toLowerCase(header.first) == "transfer-encoding")
+            {
+                return false;
+            }
+            if (toLowerCase(header.first) == "connection" && toLowerCase(header.second) == "close")
+            {
+                return false;
+            }
+        }
+        return true;
+    }
 }
 
 HttpResponse okResponse(const std::string &body, const std::string &contentType)
@@ -309,6 +360,12 @@ std::optional<std::string> readFile(const std::filesystem::path &root)
     return buffer.str();
 }
 
+bool responseKeepsAlive(const HttpResponse &response)
+{
+    const auto connection = response.headers.find("Connection");
+    return connection != response.headers.end() && connection->second == "keep-alive";
+}
+
 HttpResponse handleRequest(const std::string &raw, const std::string &documentRoot)
 {
     auto request = parseHttpRequest(raw);
@@ -316,28 +373,16 @@ HttpResponse handleRequest(const std::string &raw, const std::string &documentRo
     {
         return badRequest(); // Invalid request format
     }
-    if (request->method != "GET")
+    HttpResponse response = buildResponse(*request, documentRoot);
+    if (clientAllowsKeepAlive(*request) && response.status != 400)
     {
-        return methodNotAllowed(); // Only GET method is allowed
+        response.headers["Connection"] = "keep-alive";
     }
-    // Everything from '?' onward is a query string, not part of the file name
-    std::string path = request->path.substr(0, request->path.find('?'));
-    auto decodedPath = percentDecode(path);
-    if (!decodedPath)
+    else
     {
-        return badRequest(); // Invalid percent encoding
+        response.headers["Connection"] = "close";
     }
-    auto resolvedPath = resolvePath(documentRoot, *decodedPath);
-    if (!resolvedPath)
-    {
-        return notFound(); // File not found or path traversal attempt
-    }
-    auto fileContent = readFile(*resolvedPath);
-    if (!fileContent)
-    {
-        return notFound(); // File could not be read
-    }
-    return okResponse(*fileContent, mimeTypeFor(resolvedPath->string())); // Return the file content with appropriate MIME type
+    return response;
 }
 
 HttpResponse makeResponse(int status, const std::string &reason,
