@@ -11,6 +11,7 @@ A small HTTP/1.1 static file server written in C++17 from raw Windows sockets up
 - **Content types** chosen from the file extension, case-insensitively: HTML, CSS, JavaScript, JSON, PNG, JPEG, GIF, plain text, and PDF, with `application/octet-stream` as the fallback.
 - **Percent-decoding** of request paths, so `/my%20photo.jpg` serves `my photo.jpg`. Malformed escapes such as `%zz`, an encoded NUL byte (`%00`), and an encoded slash (`%2F`) are rejected with `400 Bad Request`.
 - **Path traversal protection** in two independent layers (see below).
+- **`GET` and `HEAD`**: a `HEAD` request gets exactly the headers `GET` would, including the real `Content-Length`, but no body, so a client can check whether a file exists and how large it is without downloading it.
 - **Clear error responses**: `400 Bad Request`, `404 Not Found`, `405 Method Not Allowed` (with the required `Allow` header), and `500 Internal Server Error`, each with a small HTML page.
 - **Robust networking**: requests that arrive in several pieces are reassembled, responses are sent completely even when the socket accepts only part at a time, and request headers are limited to 8 KB.
 - **Timeouts**: a client that goes silent for 5 seconds, or takes longer than 10 seconds to send its whole request, is disconnected. The second limit defends against slow-sending attacks such as Slowloris, which send just enough data to keep resetting a simple read timeout.
@@ -53,11 +54,11 @@ Blocked paths return `404`, the same response as a file that does not exist, so 
 
 **One thread per client, with a counted limit.** The main thread only accepts connections; each client is moved into its own detached thread, which owns the socket and closes it on exit. An atomic counter tracks active clients. The main thread increments it before starting a thread, so a sudden burst of connections cannot slip past the limit, and a small RAII guard in the client thread decrements it on every exit path, including errors.
 
-**Keep-alive only when it is safe.** One function decides whether a connection stays open, after the response is built, so every response states the decision in its `Connection` header and the server acts on that header alone. The connection is closed whenever the server cannot be sure where the next request begins: after a `400`, or when a request carries `Content-Length` or `Transfer-Encoding`. This server never reads request bodies, so an unread body would otherwise be parsed as the next request, which is how request smuggling attacks hide a second request inside the first. Bytes that arrive after the end of one request are kept in the `Socket` and used for the next.
+**Keep-alive only when it is safe.** One function decides whether a connection stays open, after the response is built, so every response states the decision in its `Connection` header and the server acts on that header alone. The connection is closed whenever the server cannot be sure where the next request begins: after a `400`, or when a request carries `Content-Length` or `Transfer-Encoding`. This server never reads request bodies, so an unread body would otherwise be parsed as the next request, which is how request smuggling attacks hide a second request inside the first. Bytes that arrive after the end of one request are kept in the `Socket` and used for the next. The same concern shapes `HEAD`: the body is still built so `Content-Length` is correct, then left out of the output by an `omitBody` flag, because any stray body bytes would be read by the client as the start of the next response.
 
 ## Tests
 
-Seven test programs with 243 assertions cover request parsing, response formatting, error pages, content types, percent-decoding, keep-alive decisions, and file serving, including fifteen path traversal attacks, seven of them percent-encoded. Run them with `mingw32-make run`.
+Eight test programs with 277 assertions cover request parsing, response formatting, error pages, content types, percent-decoding, keep-alive decisions, `HEAD` requests, and file serving, including fifteen path traversal attacks, seven of them percent-encoded. Run them with `mingw32-make run`.
 
 `test_public/` contains small files the tests serve. `test_secret.txt` sits outside that folder on purpose: it is a fake "secret" that the traversal tests try to reach, to prove they cannot. It contains no real data.
 
@@ -78,7 +79,7 @@ This is a learning project, not a production server.
 
 - An idle keep-alive connection holds one of the 100 client slots until it times out after 5 seconds. Browsers open up to six connections per site, so about 16 visitors can be connected at the same moment.
 - It uses one thread per client rather than a thread pool or asynchronous I/O, which is simple but would not scale to many thousands of connections.
-- Only `GET` is supported.
+- Only `GET` and `HEAD` are supported; other methods get `405 Method Not Allowed`.
 - It runs on Windows only, because it uses Winsock directly.
 
 ## About this project

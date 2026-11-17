@@ -197,7 +197,7 @@ namespace
 
     HttpResponse buildResponse(const HttpRequest &request, const std::string &documentRoot)
     {
-        if (request.method != "GET")
+        if (request.method != "GET" && request.method != "HEAD")
         {
             return methodNotAllowed(); // Only GET method is allowed
         }
@@ -265,7 +265,7 @@ HttpResponse notFound()
 HttpResponse methodNotAllowed()
 {
     HttpResponse response = makeErrorResponse(405, "Method Not Allowed");
-    response.headers["Allow"] = "GET";
+    response.headers["Allow"] = "GET, HEAD";
     return response;
 }
 
@@ -374,6 +374,10 @@ HttpResponse handleRequest(const std::string &raw, const std::string &documentRo
         return badRequest(); // Invalid request format
     }
     HttpResponse response = buildResponse(*request, documentRoot);
+    if (request->method == "HEAD")
+    {
+        response.omitBody = true;
+    }
     if (clientAllowsKeepAlive(*request) && response.status != 400)
     {
         response.headers["Connection"] = "keep-alive";
@@ -455,11 +459,15 @@ std::string HttpResponse::toString() const
         {
             continue; // toString always writes its own, calculated Content-Length
         }
+
         result += header.first + ": " + header.second + "\r\n";
     }
     result += "Content-Length: " + std::to_string(body.size()) + "\r\n";
     result += "\r\n"; // End of headers
-    result += body;   // Append the body
+    if (!omitBody)
+    {
+        result += body; // Append the body
+    }
     return result;
 }
 

@@ -56,7 +56,7 @@ void testBodies()
 void testAllowHeader()
 {
     // RFC 9110 requires Allow on every 405, listing the supported methods
-    assert(hasHeader(methodNotAllowed(), "Allow", "GET"));
+    assert(hasHeader(methodNotAllowed(), "Allow", "GET, HEAD"));
 
     // ...and it belongs only on the 405
     assert(badRequest().headers.count("Allow") == 0);
@@ -77,7 +77,7 @@ void testExactOutput()
     // The 405 adds Allow, which sorts before the other headers
     assert(methodNotAllowed().toString() ==
            "HTTP/1.1 405 Method Not Allowed\r\n"
-           "Allow: GET\r\n"
+           "Allow: GET, HEAD\r\n"
            "Connection: close\r\n"
            "Content-Type: text/html\r\n"
            "Content-Length: 57\r\n"

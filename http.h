@@ -15,6 +15,7 @@ struct HttpRequest
 
 struct HttpResponse
 {
+    bool omitBody = false;
     int status = 200;
     std::string reason = "OK";
     std::map<std::string, std::string> headers;
