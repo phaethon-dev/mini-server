@@ -7,6 +7,9 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <sys/stat.h> // _wstat64 and struct _stat64
+#include <ctime>      // std::time_t
+#include <iomanip>
 
 namespace fs = std::filesystem;
 
@@ -195,6 +198,17 @@ namespace
         return request;
     }
 
+    // Returns when the file was last changed, in seconds since 1 Jan 1970 (GMT)
+    std::optional<std::time_t> lastModified(const fs::path &path)
+    {
+        struct _stat64 info;                    // an empty box for the file's details
+        if (_wstat64(path.c_str(), &info) != 0) // ask Windows to fill it in; 0 means success
+        {
+            return std::nullopt; // file missing or unreadable
+        }
+        return info.st_mtime; // the "last modified" slot
+    }
+
     HttpResponse buildResponse(const HttpRequest &request, const std::string &documentRoot)
     {
         if (request.method != "GET" && request.method != "HEAD")
@@ -219,6 +233,23 @@ namespace
             return notFound(); // File could not be read
         }
         HttpResponse response = okResponse(*fileContent, mimeTypeFor(resolvedPath->string()));
+        const auto modifiedTime = lastModified(*resolvedPath);
+        if (modifiedTime)
+        {
+            response.headers["Last-Modified"] = formatHttpDate(*modifiedTime);
+        }
+        // Conditional GET: has the file changed since the browser's cached copy?
+        const auto ifModifiedSince = request.headers.find("if-modified-since");
+        if (modifiedTime && ifModifiedSince != request.headers.end())
+        {
+            const auto cachedTime = parseHttpDate(ifModifiedSince->second);
+            if (cachedTime && *modifiedTime <= *cachedTime)
+            {
+                response.status = 304;
+                response.reason = "Not Modified";
+                response.omitBody = true;
+            }
+        }
         return response;
     }
 
@@ -387,6 +418,40 @@ HttpResponse handleRequest(const std::string &raw, const std::string &documentRo
         response.headers["Connection"] = "close";
     }
     return response;
+}
+
+std::string formatHttpDate(std::time_t time)
+{
+    std::tm parts{};
+    if (gmtime_s(&parts, &time) != 0)
+    {
+        return "";
+    }
+    char buffer[64];
+    //%a is the day of the week, %d is the numerical day, %b is the month, %Y is the year, and %H:%M:%S is the 24 hour time
+    std::size_t length = std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S GMT", &parts);
+    return std::string(buffer, length);
+}
+
+std::optional<std::time_t> parseHttpDate(const std::string &text)
+{
+    std::istringstream in(text);
+    std::tm parts{};
+    in >> std::get_time(&parts, "%a, %d %b %Y %H:%M:%S GMT");
+    if (in.fail())
+    {
+        return std::nullopt;
+    }
+    std::time_t time = _mkgmtime(&parts);
+    if (time == -1)
+    {
+        return std::nullopt;
+    }
+    if (formatHttpDate(time) != text)
+    {
+        return std::nullopt;
+    }
+    return time;
 }
 
 HttpResponse makeResponse(int status, const std::string &reason,
