@@ -38,13 +38,13 @@ void handleClient(Socket client)
         // Drop clients that go silent
         if (!client.setReceiveTimeout(TIMEOUT))
         {
-            std::cerr << "Failed to set receive timeout: " << WSAGetLastError() << std::endl;
+            std::cerr << "Failed to set receive timeout: " << lastSocketError() << std::endl;
             return;
         }
         // Drop clients that stop reading
         if (!client.setSendTimeout(TIMEOUT))
         {
-            std::cerr << "Failed to set send timeout: " << WSAGetLastError() << std::endl;
+            std::cerr << "Failed to set send timeout: " << lastSocketError() << std::endl;
             return;
         }
         for (int loop = 0; loop < MAX_REQUESTS_PER_CONNECTION; loop++)
@@ -61,7 +61,7 @@ void handleClient(Socket client)
             }
             if (!client.sendAll(response.toString()))
             {
-                std::cerr << "Failed to send response: " << WSAGetLastError() << std::endl;
+                std::cerr << "Failed to send response: " << lastSocketError() << std::endl;
                 return;
             }
             if (!responseKeepsAlive(response))
@@ -87,23 +87,23 @@ int main()
     WinsockSession session;
     if (!session.isInitialized())
     {
-        std::cerr << "Failed to initialize Winsock: " << WSAGetLastError() << std::endl;
+        std::cerr << "Failed to initialize Winsock: " << lastSocketError() << std::endl;
         return 1;
     }
     Socket serverSocket;
     if (!serverSocket.isValid())
     {
-        std::cerr << "Failed to create socket: " << WSAGetLastError() << std::endl;
+        std::cerr << "Failed to create socket: " << lastSocketError() << std::endl;
         return 1;
     }
     if (!serverSocket.bind(PORT))
     {
-        std::cerr << "Failed to bind socket: " << WSAGetLastError() << std::endl;
+        std::cerr << "Failed to bind socket: " << lastSocketError() << std::endl;
         return 1;
     }
     if (!serverSocket.listen(MAX_PENDING_CONNECTIONS))
     {
-        std::cerr << "Failed to listen: " << WSAGetLastError() << std::endl;
+        std::cerr << "Failed to listen: " << lastSocketError() << std::endl;
         return 1;
     }
     std::cout << "Server is listening on port " << PORT << "..." << std::endl;
@@ -113,7 +113,7 @@ int main()
         Socket clientSocket = serverSocket.accept();
         if (!clientSocket.isValid())
         {
-            std::cerr << "Failed to accept client connection: " << WSAGetLastError() << std::endl;
+            std::cerr << "Failed to accept client connection: " << lastSocketError() << std::endl;
             continue;
         }
         if (activeClients.load() >= MAX_CLIENTS)

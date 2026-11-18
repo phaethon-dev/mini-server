@@ -1,9 +1,26 @@
 #include "socket.h"
 
+namespace
+{
+    // Sets a socket timeout (SO_RCVTIMEO or SO_SNDTIMEO) in each platform's own format
+    bool setTimeout(SocketHandle handle, int option, int milliseconds)
+    {
+#ifdef _WIN32
+        DWORD timeout = static_cast<DWORD>(milliseconds); // Windows: a number of milliseconds
+#else
+        timeval timeout{}; // Linux: seconds + microseconds
+        timeout.tv_sec = milliseconds / 1000;
+        timeout.tv_usec = (milliseconds % 1000) * 1000;
+#endif
+        return ::setsockopt(handle, SOL_SOCKET, option,
+                            reinterpret_cast<const char *>(&timeout), sizeof(timeout)) != SOCKET_ERROR_RESULT;
+    }
+}
+
 // Move constructor, transfers ownership of the socket handle from another Socket
 Socket::Socket(Socket &&other) noexcept : handle_(other.handle_), pending_(std::move(other.pending_))
 {
-    other.handle_ = INVALID_SOCKET; // the old object no longer owns it
+    other.handle_ = INVALID_SOCKET_HANDLE; // the old object no longer owns it
 }
 
 Socket::Socket()
@@ -11,7 +28,7 @@ Socket::Socket()
     handle_ = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 }
 
-Socket::Socket(SOCKET handle) : handle_(handle)
+Socket::Socket(SocketHandle handle) : handle_(handle)
 {
 }
 
@@ -26,7 +43,7 @@ Socket &Socket::operator=(Socket &&other) noexcept
     {
         close();
         handle_ = other.handle_;
-        other.handle_ = INVALID_SOCKET;
+        other.handle_ = INVALID_SOCKET_HANDLE;
         pending_ = std::move(other.pending_);
     }
     return *this;
@@ -34,33 +51,40 @@ Socket &Socket::operator=(Socket &&other) noexcept
 
 bool Socket::bind(int port)
 {
+#ifndef _WIN32
+    int enable = 1;
+    if (::setsockopt(handle_, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) == SOCKET_ERROR_RESULT)
+    {
+        return false;
+    }
+#endif
     sockaddr_in address{};        // {} zeroes every field first
     address.sin_family = AF_INET; // IPv4
     address.sin_port = htons(static_cast<u_short>(port));
     address.sin_addr.s_addr = htonl(INADDR_LOOPBACK); // 127.0.0.1
 
-    return ::bind(handle_, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != SOCKET_ERROR;
+    return ::bind(handle_, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != SOCKET_ERROR_RESULT;
 }
 
 bool Socket::listen(int backlog)
 {
-    return ::listen(handle_, backlog) != SOCKET_ERROR; // backlog is the number of pending connections that can be queued
+    return ::listen(handle_, backlog) != SOCKET_ERROR_RESULT; // backlog is the number of pending connections that can be queued
 }
 
 Socket Socket::accept()
 {
-    SOCKET client = ::accept(handle_, nullptr, nullptr); // Accept a new connection, returns a new socket handle for the client
+    SocketHandle client = ::accept(handle_, nullptr, nullptr); // Accept a new connection, returns a new socket handle for the client
     return Socket(client);
 }
 
-bool Socket::setReceiveTimeout(DWORD ms)
+bool Socket::setReceiveTimeout(int milliseconds)
 {
-    return ::setsockopt(handle_, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&ms), sizeof(ms)) != SOCKET_ERROR;
+    return setTimeout(handle_, SO_RCVTIMEO, milliseconds);
 }
 
-bool Socket::setSendTimeout(DWORD ms)
+bool Socket::setSendTimeout(int milliseconds)
 {
-    return ::setsockopt(handle_, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char *>(&ms), sizeof(ms)) != SOCKET_ERROR;
+    return setTimeout(handle_, SO_SNDTIMEO, milliseconds);
 }
 
 bool Socket::sendAll(const std::string &data)
@@ -69,8 +93,8 @@ bool Socket::sendAll(const std::string &data)
     while (sent < data.size())
     {
         int result = ::send(handle_, data.data() + sent,
-                            static_cast<int>(data.size() - sent), 0);
-        if (result == SOCKET_ERROR)
+                            static_cast<int>(data.size() - sent), SEND_FLAGS);
+        if (result == SOCKET_ERROR_RESULT)
         {
             return false;
         }
@@ -95,7 +119,7 @@ std::optional<std::string> Socket::readRequest(std::size_t maxBytes)
             return request; // the blank line arrived: the headers are complete
         }
         int received = ::recv(handle_, buffer, sizeof(buffer), 0);
-        if (received == SOCKET_ERROR || received == 0)
+        if (received == SOCKET_ERROR_RESULT || received == 0)
         {
             return std::nullopt; // an error, or the client disconnected
         }
@@ -113,9 +137,13 @@ std::optional<std::string> Socket::readRequest(std::size_t maxBytes)
 
 void Socket::close()
 {
-    if (handle_ != INVALID_SOCKET)
+    if (handle_ != INVALID_SOCKET_HANDLE)
     {
+#ifdef _WIN32
         ::closesocket(handle_);
-        handle_ = INVALID_SOCKET;
+#else
+        ::close(handle_);
+#endif
+        handle_ = INVALID_SOCKET_HANDLE;
     }
 }

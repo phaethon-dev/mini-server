@@ -1,6 +1,6 @@
 # mini-server
 
-A small HTTP/1.1 static file server written in C++17 from raw Windows sockets up, with no networking or HTTP libraries. It parses requests strictly against the HTTP specification, serves files from a folder with the correct content types, and blocks attempts to read files outside that folder.
+A small HTTP/1.1 static file server written in C++17 from raw sockets up, with no networking or HTTP libraries. It runs on both Windows and Linux. It parses requests strictly against the HTTP specification, serves files from a folder with the correct content types, and blocks attempts to read files outside that folder.
 
 ## Features
 
@@ -22,15 +22,27 @@ A small HTTP/1.1 static file server written in C++17 from raw Windows sockets up
 
 ## Building and running
 
-Requirements: Windows, a C++17 compiler, and GNU Make. I use [MSYS2](https://www.msys2.org/) with the UCRT64 toolchain, where Make is called `mingw32-make`.
+Requirements: a C++17 compiler and GNU Make. The same Makefile works on both systems and detects which one it is running on.
+
+**Windows.** I use [MSYS2](https://www.msys2.org/) with the UCRT64 toolchain, where Make is called `mingw32-make`.
 
 ```
-mingw32-make            # build the server and all test programs
-mingw32-make run        # build and run every test program
-.\server.exe            # start the server
+mingw32-make                  # build the server and all test programs
+mingw32-make run              # build and run every test program
+.\build\windows\server.exe    # start the server
 ```
 
-Then open <http://localhost:8080>. The server serves the demo site in `public/`. Stop it with Ctrl+C.
+**Linux** (tested on Ubuntu under WSL2, with `build-essential` installed):
+
+```
+make                          # build the server and all test programs
+make run                      # build and run every test program
+./build/linux/server          # start the server
+```
+
+Each platform builds into its own folder, `build/windows/` or `build/linux/`, so both can be built from the same checkout without overwriting each other. `make clean` deletes the whole `build/` folder.
+
+Start the server from the project folder, then open <http://localhost:8080>. The server serves the demo site in `public/`. Stop it with Ctrl+C. Under WSL2, a server started in Linux can be opened from a browser in Windows at the same address.
 
 The server listens on `127.0.0.1` only, so it can be reached from this computer but not from other machines on the network.
 
@@ -47,7 +59,7 @@ Blocked paths return `404`, the same response as a file that does not exist, so 
 
 **Strict parsing.** Lenient parsers that accept things like whitespace before a header colon or stray carriage returns can disagree with proxies about where a request ends, which is the basis of HTTP request smuggling. This server rejects anything ambiguous. Rejecting all duplicate headers is deliberately stricter than the specification.
 
-**RAII for operating system resources.** `WinsockSession` starts and cleans up Winsock, and `Socket` owns a single socket handle and closes it in its destructor. `Socket` cannot be copied, only moved, so every handle is closed exactly once, even when a function returns early.
+**RAII for operating system resources.** `WinsockSession` starts and cleans up Winsock on Windows (Linux needs no setup, so there it does nothing), and `Socket` owns a single socket handle and closes it in its destructor. `Socket` cannot be copied, only moved, so every handle is closed exactly once, even when a function returns early.
 
 **Testable core, thin networking layer.** All decisions live in `handleRequest`, which takes the raw request text and returns a response without touching any sockets. The networking code in `server.cpp` only accepts connections, reads, calls the handler, and sends.
 
@@ -59,9 +71,14 @@ Blocked paths return `404`, the same response as a file that does not exist, so 
 
 **A 304 is the 200 with three changes.** A `304 Not Modified` is built from the real file response by changing its status and reason and setting `omitBody`, so it keeps the same `Content-Type`, `Last-Modified`, and `Content-Length` (the size of the cached file, as RFC 9110 requires) without any separate code path. Dates are always formatted and parsed in GMT, and parsing is strict: a date is accepted only if formatting it again reproduces the exact text, which rejects trailing junk, a wrong weekday, or impossible dates like 30 February. An unreadable `If-Modified-Since` is ignored, so the worst case is sending the file in full.
 
+**Small, contained platform differences.** Windows and Linux differ in socket types, error codes, timeout formats, and date functions, but each difference is handled in one small `#ifdef _WIN32` block that turns the platform's result into a shared name or value (`SocketHandle`, `lastSocketError()`, a `converted` flag), so the logic around it is written once. Two differences change behavior, not just names:
+
+- On Linux, writing to a connection the client has already closed raises `SIGPIPE`, which terminates the process by default. Every send passes `MSG_NOSIGNAL`, so a client hanging up mid-download becomes an ordinary send error that ends only that connection.
+- After a restart, Linux keeps the previous run's closed connections in `TIME-WAIT` for 60 seconds and refuses to bind the port until they expire. The server sets `SO_REUSEADDR` on Linux so it can restart immediately. It is deliberately not set on Windows, where the same option means something different: it would let another program bind the port while the server is still running.
+
 ## Tests
 
-Nine test programs with 328 assertions cover request parsing, response formatting, error pages, content types, percent-decoding, keep-alive decisions, `HEAD` requests, HTTP dates and conditional requests, and file serving, including fifteen path traversal attacks, seven of them percent-encoded. Run them with `mingw32-make run`.
+Nine test programs with 328 assertions cover request parsing, response formatting, error pages, content types, percent-decoding, keep-alive decisions, `HEAD` requests, HTTP dates and conditional requests, and file serving, including fifteen path traversal attacks, seven of them percent-encoded. Run them with `mingw32-make run` on Windows or `make run` on Linux; all of them pass on both.
 
 `test_public/` contains small files the tests serve. `test_secret.txt` sits outside that folder on purpose: it is a fake "secret" that the traversal tests try to reach, to prove they cannot. It contains no real data.
 
@@ -70,7 +87,7 @@ Nine test programs with 328 assertions cover request parsing, response formattin
 | File | Purpose |
 |---|---|
 | `http.h` / `http.cpp` | Request parsing, response building, content types, path resolution, and `handleRequest` |
-| `socket.h` / `socket.cpp` | `WinsockSession` and the move-only `Socket` class, which buffers bytes left over from one request for the next |
+| `socket.h` / `socket.cpp` | The Windows and Linux socket differences, `WinsockSession`, and the move-only `Socket` class, which buffers bytes left over from one request for the next |
 | `server.cpp` | `main`, which accepts connections, and `handleClient`, which reads, handles, and sends each request on the client's own thread |
 | `*_test.cpp` | Test programs, found and run automatically by the Makefile |
 | `public/` | The demo site the server serves |
@@ -84,7 +101,7 @@ This is a learning project, not a production server.
 - It uses one thread per client rather than a thread pool or asynchronous I/O, which is simple but would not scale to many thousands of connections.
 - Only `GET` and `HEAD` are supported; other methods get `405 Method Not Allowed`.
 - Caching uses dates only: there are no `ETag` validators, and `If-Modified-Since` is accepted only in the standard date format, not the two obsolete formats RFC 9110 also allows.
-- It runs on Windows only, because it uses Winsock and Windows file APIs directly.
+- It has been tested on Windows and on Linux (Ubuntu), but not on macOS.
 
 ## About this project
 

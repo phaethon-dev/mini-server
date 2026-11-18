@@ -201,10 +201,16 @@ namespace
     // Returns when the file was last changed, in seconds since 1 Jan 1970 (GMT)
     std::optional<std::time_t> lastModified(const fs::path &path)
     {
-        struct _stat64 info;                    // an empty box for the file's details
-        if (_wstat64(path.c_str(), &info) != 0) // ask Windows to fill it in; 0 means success
+#ifdef _WIN32
+        struct _stat64 info;                                   // an empty box for the file's details
+        const int result = _wstat64(path.c_str(), &info);
+#else
+        struct stat info;
+        const int result = stat(path.c_str(), &info);
+#endif
+        if (result != 0)
         {
-            return std::nullopt; // file missing or unreadable
+            return std::nullopt;
         }
         return info.st_mtime; // the "last modified" slot
     }
@@ -423,7 +429,13 @@ HttpResponse handleRequest(const std::string &raw, const std::string &documentRo
 std::string formatHttpDate(std::time_t time)
 {
     std::tm parts{};
-    if (gmtime_s(&parts, &time) != 0)
+#ifdef _WIN32
+    const bool converted = gmtime_s(&parts, &time) == 0;
+
+#else
+    const bool converted = gmtime_r(&time, &parts) != nullptr;
+#endif
+    if (!converted)
     {
         return "";
     }
@@ -442,7 +454,11 @@ std::optional<std::time_t> parseHttpDate(const std::string &text)
     {
         return std::nullopt;
     }
+#ifdef _WIN32
     std::time_t time = _mkgmtime(&parts);
+#else
+    std::time_t time = timegm(&parts);
+#endif
     if (time == -1)
     {
         return std::nullopt;
