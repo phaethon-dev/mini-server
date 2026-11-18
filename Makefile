@@ -1,4 +1,5 @@
 ifeq ($(OS),Windows_NT)
+    SHELL    = cmd.exe
     PLATFORM = windows
     EXE      = .exe
     LDLIBS   = -lws2_32
