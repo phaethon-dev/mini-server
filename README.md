@@ -1,5 +1,7 @@
 # mini-server
 
+[![CI](https://github.com/phaethon-dev/mini-server/actions/workflows/ci.yml/badge.svg)](https://github.com/phaethon-dev/mini-server/actions/workflows/ci.yml)
+
 A small HTTP/1.1 static file server written in C++17 from raw sockets up, with no networking or HTTP libraries. It runs on both Windows and Linux. It parses requests strictly against the HTTP specification, serves files from a folder with the correct content types, and blocks attempts to read files outside that folder.
 
 ## Features
@@ -78,7 +80,7 @@ Blocked paths return `404`, the same response as a file that does not exist, so 
 
 ## Tests
 
-Nine test programs with 328 assertions cover request parsing, response formatting, error pages, content types, percent-decoding, keep-alive decisions, `HEAD` requests, HTTP dates and conditional requests, and file serving, including fifteen path traversal attacks, seven of them percent-encoded. Run them with `mingw32-make run` on Windows or `make run` on Linux; all of them pass on both.
+Nine test programs with 328 assertions cover request parsing, response formatting, error pages, content types, percent-decoding, keep-alive decisions, `HEAD` requests, HTTP dates and conditional requests, and file serving, including fifteen path traversal attacks, seven of them percent-encoded. Run them with `mingw32-make run` on Windows or `make run` on Linux; all of them pass on both. GitHub Actions builds the project and runs every test on fresh Windows and Ubuntu machines after each push, so a change that breaks either platform shows up right away.
 
 `test_public/` contains small files the tests serve. `test_secret.txt` sits outside that folder on purpose: it is a fake "secret" that the traversal tests try to reach, to prove they cannot. It contains no real data.
 
@@ -90,6 +92,7 @@ Nine test programs with 328 assertions cover request parsing, response formattin
 | `socket.h` / `socket.cpp` | The Windows and Linux socket differences, `WinsockSession`, and the move-only `Socket` class, which buffers bytes left over from one request for the next |
 | `server.cpp` | `main`, which accepts connections, and `handleClient`, which reads, handles, and sends each request on the client's own thread |
 | `*_test.cpp` | Test programs, found and run automatically by the Makefile |
+| `.github/workflows/ci.yml` | The GitHub Actions workflow that builds and tests on Windows and Linux |
 | `public/` | The demo site the server serves |
 | `test_public/`, `test_secret.txt` | Fixtures for the file-serving and traversal tests |
 
