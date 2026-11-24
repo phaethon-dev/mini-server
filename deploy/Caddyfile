@@ -1,0 +1,5 @@
+# Rehearsal: serves https://localhost with Caddy's own local certificate.
+# On the VPS, replace "localhost" with the domain name.
+localhost {
+	reverse_proxy 127.0.0.1:8080
+}

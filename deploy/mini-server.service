@@ -1,0 +1,21 @@
+# systemd unit for mini-server. Install with:
+#   sudo cp deploy/mini-server.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+# The program and public/ must be in /opt/mini-server (the same path on every machine).
+
+[Unit]
+Description=mini-server static file server
+After=network.target
+
+[Service]
+ExecStart=/opt/mini-server/build/linux/server
+# The server finds public/ relative to the folder it starts in
+WorkingDirectory=/opt/mini-server
+# Run as a throwaway user with no password, no home folder, and no write access to the system
+DynamicUser=yes
+# Restart after a crash, but not after a deliberate stop
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
